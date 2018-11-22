@@ -1,0 +1,165 @@
+CREATE OR replace directory UTL_FILE_log_pack AS '\\10.10.60.11\test'
+
+
+
+
+
+
+CREATE OR REPLACE package DISPUTE.log_pack
+IS
+    f_path VARCHAR2(255):='UTL_FILE_LOG_PACK';
+    PROCEDURE write_info(in_text varchar2,pakage_source_name varchar2,procedure_source_name varchar2,writing_status varchar2);
+    PROCEDURE write_info2(in_text varchar2,file_name varchar2,writing_status varchar2,pakage_source_name varchar2,procedure_source_name varchar2);
+    PROCEDURE write_dbms_console(pakage_source_name varchar2,procedure_source_name varchar2,writing_status varchar2);
+    PROCEDURE write_errors(in_text varchar2,pakage_source_name varchar2,procedure_source_name varchar2,writing_status varchar2);
+    PROCEDURE write_debug(in_text varchar2,pakage_source_name varchar2,procedure_source_name varchar2,writing_status varchar2);
+    PROCEDURE write_exceptions(in_text varchar2,pakage_source_name varchar2,procedure_source_name varchar2,writing_status varchar2);
+    PROCEDURE writeOnMultiLog(in_text varchar2,writing_status varchar2,pakage_source_name varchar2,procedure_source_name varchar2,debug_level NUMBER);
+end log_pack;
+/
+
+
+
+
+
+
+
+CREATE OR REPLACE package body DISPUTE.log_pack
+IS
+    --write_log header--
+    PROCEDURE write_log(file_name varchar2,writing_status varchar2,text varchar2);--writes or append to a file
+
+
+    PROCEDURE write_log(file_name varchar2,writing_status varchar2,text varchar2)
+     IS
+        v_fexists BOOLEAN; --if file exists
+        v_file_length NUMBER; --file length
+        v_block_size BINARY_INTEGER;
+        l_file UTL_FILE.file_type;
+    BEGIN
+        UTL_FILE.FGETATTR(f_path,file_name,v_fexists, v_file_length, v_block_size); --getting values about log file
+
+        IF writing_status='create' OR v_file_length >= 4000 -- 4000 bytes size of file
+        THEN
+        l_file := UTL_FILE.fopen(f_path,SYSdate||' '||file_name,'W'); -- W==> write to log
+        UTL_FILE.PUT_LINE(l_file,text);
+        UTL_FILE.fclose(l_file);
+        ELSE
+        l_file := UTL_FILE.fopen(f_path,file_name,'A'); -- A==> append to log
+        UTL_FILE.PUT_LINE(l_file,text);
+        UTL_FILE.fclose(l_file);
+        END IF;
+    END write_log;
+
+    PROCEDURE write_info(in_text varchar2,pakage_source_name varchar2,procedure_source_name varchar2,writing_status varchar2)
+    IS
+
+        file_name varchar2(255):='info.txt';
+        --text varchar2(32767);
+    BEGIN
+
+        --text :=SYSTIMESTAMP||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;	
+        --write_log(f_path,file_name,writing_status,text);
+
+        LOG_PACK.write_info2(in_text,file_name,writing_status,pakage_source_name,procedure_source_name);
+    END write_info;
+
+
+    PROCEDURE write_info2(in_text varchar2,file_name varchar2,writing_status varchar2,
+    pakage_source_name varchar2,procedure_source_name varchar2)
+    IS
+        text varchar2(32767);
+    BEGIN
+        text :=SYSTIMESTAMP||CHR(9)||file_name||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;	
+        LOG_PACK.write_log(file_name,writing_status,text);
+    END write_info2;
+
+    PROCEDURE write_errors(in_text varchar2,pakage_source_name varchar2,procedure_source_name varchar2,writing_status varchar2)
+    IS
+
+        file_name varchar2(255):='errors.txt';
+        text varchar2(32767);
+    BEGIN
+        text :=SYSTIMESTAMP||CHR(9)||file_name||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log(file_name,writing_status,text);
+    END write_errors;
+    
+    
+     PROCEDURE write_dbms_console(pakage_source_name varchar2,procedure_source_name varchar2,writing_status varchar2)
+    IS
+        
+        file_name varchar2(255):='dbms_console.txt';
+        text varchar2(32767);
+        buffer varchar2(1000);
+        status number;
+        all_lines varchar2(2000);
+        
+    BEGIN
+        
+        for i in 1 .. 2000
+        loop
+        dbms_output.get_line(buffer,status);
+        if status = 1 
+        then
+        exit;
+        end if;
+        all_lines:=all_lines||buffer||chr(10);
+        end loop;
+        
+        text :=SYSTIMESTAMP||CHR(9)||file_name||CHR(9)||all_lines||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log(file_name,writing_status,text);
+    END write_dbms_console;
+    
+
+    PROCEDURE write_debug(in_text varchar2,pakage_source_name varchar2,procedure_source_name varchar2,writing_status varchar2)
+    IS
+
+        file_name varchar2(255):='debug.txt';
+        text varchar2(32767);
+    BEGIN
+        text :=SYSTIMESTAMP||CHR(9)||file_name||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log(file_name,writing_status,text);
+    END write_debug;
+
+
+    PROCEDURE write_exceptions(in_text varchar2,pakage_source_name varchar2,procedure_source_name varchar2,writing_status varchar2)
+    IS
+
+        file_name varchar2(255):='exceptions.txt';
+        text varchar2(32767);
+    BEGIN
+        text :=SYSTIMESTAMP||CHR(9)||file_name||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log(file_name,writing_status,text);
+    END write_exceptions;
+
+
+    PROCEDURE writeOnMultiLog(in_text varchar2,writing_status varchar2,pakage_source_name varchar2,procedure_source_name varchar2,debug_level NUMBER)
+    IS
+        text varchar2(32767);
+    BEGIN
+        IF debug_level=0 THEN
+        text :=SYSTIMESTAMP||CHR(9)||'info.txt'||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log('info.txt',writing_status,text);
+        text :=SYSTIMESTAMP||CHR(9)||'errors.txt'||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log('errors.txt',writing_status,text);
+        text :=SYSTIMESTAMP||CHR(9)||'debug.txt'||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log('debug.txt',writing_status,text);
+        text :=SYSTIMESTAMP||CHR(9)||'exceptions.txt'||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log('exceptions.txt',writing_status,text);
+
+        ELSIF debug_level=1 THEN
+        text :=SYSTIMESTAMP||CHR(9)||'info.txt'||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log('info.txt',writing_status,text);
+        text :=SYSTIMESTAMP||CHR(9)||'errors.txt'||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log('errors.txt',writing_status,text);
+
+        ELSIF debug_level=2 THEN
+        text :=SYSTIMESTAMP||CHR(9)||'debug.txt'||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log('debug.txt',writing_status,text);
+        text :=SYSTIMESTAMP||CHR(9)||'exceptions.txt'||CHR(9)||in_text||CHR(9)||pakage_source_name||CHR(9)||procedure_source_name;		
+        LOG_PACK.write_log('exceptions.txt',writing_status,text);
+
+        END IF;
+    END writeOnMultiLog;
+end log_pack;
+/

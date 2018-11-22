@@ -1,0 +1,567 @@
+GRANT EXECUTE ON  sys.UTL_FILE TO dispute 
+
+
+GRANT CREATE ANY directory TO dispute
+
+
+
+grant select, insert, update, delete on dispute.CHRG_INTR to dispute; 
+grant select, insert, update, delete on dispute.FILES_PATH to dispute; 
+
+
+
+
+
+
+
+CREATE TABLE chrg_intr (
+id NUMBER,
+link_file varchar2(1000),
+file_name varchar2(1000),
+field2 varchar2(1000),
+field32 varchar2(1000),
+field33 varchar2(1000),
+field38 varchar2(1000),
+file_line varchar2(1500),
+destination_path varchar2(2000)
+);
+
+
+
+CREATE SEQUENCE sq1
+MAXVALUE 1000000000
+MINVALUE 1
+INCREMENT BY 1
+START WITH 1
+nocache
+cycle;
+
+
+
+
+CREATE TABLE FILES_PATH (
+	ID NUMBER,
+	INTER_PATH VARCHAR2(1000),
+	DISP_PATH VARCHAR2(1000),
+	DESTINATION VARCHAR2(1000)
+) ;
+
+
+INSERT INTO files_path values(1,'C:\Users\AMardini\Desktop\Chargeback files 2018 -processed-new\(1)\IFD18031301IFEEDTL','C:\Users\AMardini\Desktop\Chargeback files 2018 -processed-new\(1)\IFD18031301IERRN','C:\Users\AMardini\Desktop\Chargeback files 2018 -processed-new');
+
+CREATE OR replace TYPE match_arr IS TABLE OF varchar2(4000)
+
+
+
+
+
+CREATE OR REPLACE PACKAGE DISPUTE.test_dspt_ntrchg 
+IS
+    full_dest chrg_intr.destination_path%TYPE;
+    check_exp EXCEPTION;
+    PROCEDURE run_prog(intrch_name VARCHAR2,dipute_name VARCHAR2,dest VARCHAR2,check_java OUT NUMBER);--run program
+	PROCEDURE regnrate(intrch_name VARCHAR2,dipute_name VARCHAR2,dest VARCHAR2);--if files already processed regenerate them
+	PROCEDURE update_dir(intrpath varchar2,disppath varchar2,destpath varchar2);
+
+END;
+/
+
+
+
+
+
+
+
+
+
+
+
+
+
+CREATE OR REPLACE PACKAGE body DISPUTE.test_dspt_ntrchg
+IS 
+
+    PROCEDURE check_file(file_name IN VARCHAR2,link_f in VARCHAR2);--check if the file names exists in table 
+    PROCEDURE create_dir(intrch_name IN VARCHAR2,dipute_name IN VARCHAR2,dest IN VARCHAR2,dir_name_intrc IN VARCHAR2,dir_name_disp IN VARCHAR2,dest_dir_name IN VARCHAR2,v_intrch_name OUT VARCHAR2,v_dipute_name OUT VARCHAR2,intr_path OUT VARCHAR2,disp_path OUT VARCHAR2);
+    --PROCEDURE file_exists(dir_name_intrc varchar2,dir_name_disp varchar2,intrch_name varchar2,dipute_name varchar2); -- to check if the interchange and dispute files exists
+    PROCEDURE read_file(dir_name IN varchar2,file_name IN varchar2,link_f IN varchar2,flag number);--read the files and insert them into chrg_intr table
+    PROCEDURE write_match(dest_dir_name varchar2,intrch_name varchar2);-- writing matched and unmatched key values into 2 txt files
+    PROCEDURE count_rows(disp varchar2 , intrch varchar2,dest_dir_name varchar2);-- this procedure for checking the number of matched and unmatched transaction
+    PROCEDURE writefile(all_text match_arr,filename VARCHAR2,dest_dir_name VARCHAR2);--the writing procedure
+
+	PROCEDURE run_prog(intrch_name VARCHAR2,dipute_name VARCHAR2,dest VARCHAR2,check_java OUT NUMBER)
+	IS 
+	    
+		dir_name_intrc VARCHAR2(1000):='UTL_FILE_DIR_DISPUTE_INTRC';--name of path to read interchange file
+		dir_name_disp VARCHAR2(1000):='UTL_FILE_DIR_DISPUTE_DISP';--name of path to read dispute file
+		dest_dir_name VARCHAR2(1000):='UTL_FILE_DIR_DISPUTE_DEST';--name of path to write files
+		
+		v_intrch_name VARCHAR2(1000); --name of interchange file
+		v_dipute_name VARCHAR2(1000); --name of dispute file
+		
+		intr_path VARCHAR2(1000); --interchange file path
+		disp_path VARCHAR2(1000); --dispute file path
+	   
+	BEGIN 
+	    test_dspt_ntrchg.full_dest:=dest; --CHANGE the destination PATH TO LAST value in chrg_intr table
+	    
+		create_dir(intrch_name,dipute_name,dest,dir_name_intrc,dir_name_disp,dest_dir_name,v_intrch_name,v_dipute_name,intr_path,disp_path);
+
+		test_dspt_ntrchg.check_file(v_intrch_name,v_dipute_name);
+	    test_dspt_ntrchg.read_file(dir_name_intrc,v_intrch_name,v_dipute_name,1); --  1=interchange
+		test_dspt_ntrchg.read_file(dir_name_disp,v_dipute_name,v_intrch_name,0);-- 0=dispute
+		test_dspt_ntrchg.COUNT_ROWS(v_dipute_name,v_intrch_name,dest_dir_name);
+		test_dspt_ntrchg.WRITE_MATCH(dest_dir_name,v_intrch_name);
+	
+		COMMIT;
+		
+	EXCEPTION
+	    
+	    WHEN check_exp THEN check_java:=1;  --   if name of files exists in table send 1
+		WHEN OTHERS THEN  DISPUTE.log_pack.WRITE_EXCEPTIONS(sqlerrm||'   '||SQLCODE,'TEST_DSPT_NTRCHG','run_prog','append');
+	END ;
+	
+	
+	
+
+	
+	PROCEDURE regnrate(intrch_name VARCHAR2,dipute_name VARCHAR2,dest VARCHAR2) --if files already processed regenerate them
+	IS 
+	    
+		dir_name_intrc VARCHAR2(1000):='UTL_FILE_DIR_DISPUTE_INTRC';--name of path to read interchange file
+		dir_name_disp VARCHAR2(1000):='UTL_FILE_DIR_DISPUTE_DISP';--name of path to read dispute file
+		dest_dir_name VARCHAR2(1000):='UTL_FILE_DIR_DISPUTE_DEST';--name of path to write files
+		
+		v_intrch_name VARCHAR2(1000); --name of interchange file
+		v_dipute_name VARCHAR2(1000); --name of dispute file
+		
+		intr_path VARCHAR2(1000); --interchange file path
+		disp_path VARCHAR2(1000); --dispute file path
+		
+	   
+	BEGIN 
+	
+	     create_dir(intrch_name,dipute_name,dest,dir_name_intrc,dir_name_disp,dest_dir_name,v_intrch_name,v_dipute_name,intr_path,disp_path);
+		
+		test_dspt_ntrchg.full_dest:=dest; --CHANGE the destination PATH TO LAST value in chrg_intr table
+		UPDATE DISPUTE.CHRG_INTR SET DESTINATION_PATH = dest WHERE FILE_NAME in(v_intrch_name,v_dipute_name);
+		
+		IF SQL%notfound 
+     	  THEN
+            DISPUTE.log_pack.WRITE_EXCEPTIONS('no rows to update in table!!!!!','TEST_DSPT_NTRCHG','regnrate','append');
+     	  END IF;
+				
+		
+		test_dspt_ntrchg.COUNT_ROWS(v_dipute_name,v_intrch_name,dest_dir_name);
+		test_dspt_ntrchg.WRITE_MATCH(dest_dir_name,v_intrch_name);   
+		
+		COMMIT;
+		
+	EXCEPTION
+	    
+		WHEN OTHERS THEN  DISPUTE.log_pack.WRITE_EXCEPTIONS(sqlerrm||'   '||SQLCODE,'TEST_DSPT_NTRCHG','regnrate','append');
+		
+	END ;
+	
+	
+	PROCEDURE create_dir(intrch_name IN VARCHAR2,dipute_name IN VARCHAR2,dest IN VARCHAR2,dir_name_intrc IN VARCHAR2,dir_name_disp IN VARCHAR2,dest_dir_name IN VARCHAR2,v_intrch_name OUT VARCHAR2,v_dipute_name OUT VARCHAR2,intr_path OUT VARCHAR2,disp_path OUT VARCHAR2)
+	is
+	
+	BEGIN 
+
+	    v_intrch_name:=SUBSTR(intrch_name,INSTR(intrch_name,'IFD')); --substring the name from path
+		v_dipute_name:=SUBSTR(dipute_name,INSTR(dipute_name,'IFD')); --substring the name from path
+		intr_path:=SUBSTR(intrch_name,1,INSTR(intrch_name,'\IFD'));--substring the path without name of interchange file
+		disp_path:=SUBSTR(dipute_name,1,INSTR(dipute_name,'\IFD'));--substring the path without name of dispute file
+	
+	    EXECUTE IMMEDIATE'CREATE OR REPLACE DIRECTORY '||dest_dir_name||' AS '||CHR(39)||dest||CHR(39);--creating directory to write result files to it
+		EXECUTE IMMEDIATE'CREATE OR REPLACE DIRECTORY '||dir_name_disp||' AS '||CHR(39)||disp_path||CHR(39);--creating directory to read dispute file
+		EXECUTE IMMEDIATE'CREATE OR REPLACE DIRECTORY '||dir_name_intrc||' AS '||CHR(39)||intr_path||CHR(39);--creating directory to read interchange file
+	END;
+	
+	PROCEDURE update_dir(intrpath VARCHAR2,disppath VARCHAR2,destpath VARCHAR2) --update directories in FILES_PATH table
+	IS 
+	BEGIN 
+		
+		UPDATE files_path 
+		SET INTER_PATH=COALESCE(intrpath,'\\\\adel-pc\\test'),DISP_PATH=COALESCE(disppath,'\\\\adel-pc\\test'),DESTINATION=COALESCE(destpath,'\\\\adel-pc\\test') 
+		WHERE id=1;
+	  
+		IF SQL%notfound 
+     	  THEN
+            DISPUTE.log_pack.WRITE_EXCEPTIONS('no rows to update in table , contact the developer','TEST_DSPT_NTRCHG','update_dir','append');
+     	  END IF;
+		COMMIT;
+	END; 
+	
+	
+	
+	
+	
+	PROCEDURE check_file(file_name IN VARCHAR2,link_f IN VARCHAR2) --check if the file names exists in CHRG_INTR table 
+	IS 
+		CURSOR chk_file IS SELECT * 
+						   FROM chrg_intr;
+						   
+	BEGIN 
+		FOR i IN chk_file 
+		LOOP 
+		
+			IF i.FILE_NAME=file_name OR i.LINK_FILE=link_f 
+			THEN 
+				RAISE check_exp;
+
+			END IF;
+			
+		END LOOP ;
+	
+	END; 
+	
+	
+	
+	
+/*
+	PROCEDURE file_exists(dir_name_intrc VARCHAR2,dir_name_disp VARCHAR2,intrch_name VARCHAR2,dipute_name VARCHAR2) --check if the interchange and chargeback files witch are chosen from the java interface are exists 
+	IS
+	  v_fexists_inter BOOLEAN; -- file existence
+	  v_file_length_inter NUMBER; --file length
+	  v_block_size_inter BINARY_INTEGER;
+	   
+	   
+	  v_fexists_disp BOOLEAN; -- file existence
+	  v_file_length_disp NUMBER; --file length
+	  v_block_size_disp BINARY_INTEGER;
+	  
+	BEGIN 
+		UTL_FILE.FGETATTR(dir_name_intrc,intrch_name,v_fexists_inter, v_file_length_inter, v_block_size_inter); --getting values about existing of interchange file
+	    UTL_FILE.FGETATTR(dir_name_disp,dipute_name,v_fexists_disp, v_file_length_disp, v_block_size_disp); --getting values about existing of dispute file
+	
+		IF v_fexists_inter=TRUE  AND v_fexists_disp=TRUE 
+		THEN 
+		raise_application_error(-20003,'interchange and dispute  exists  ');
+		ELSE
+		raise_application_error(-20002,'interchange or dispute files not exists  ');
+		END IF;
+		
+	END; 
+	
+
+	*/
+	
+	
+	
+	PROCEDURE read_file(dir_name IN VARCHAR2,file_name IN VARCHAR2,link_f IN VARCHAR2,flag NUMBER) -- flag=0 chargeback // 1= interchange    --- reads the interc. and charg. files and do substring then insert information to CHRG_INTR table
+	IS
+		l_file UTL_FILE.file_type; 
+		l_text VARCHAR2(32767);
+		
+		--v_key2 chrg_intr.field2%TYPE;
+		s_key2 NUMBER;
+		l_key2 NUMBER;
+		
+		--v_key32 chrg_intr.field32%TYPE;
+		s_key32 NUMBER;
+		l_key32 NUMBER;
+		
+		--v_key33 chrg_intr.field33%TYPE;
+		s_key33 NUMBER;
+		l_key33 NUMBER;
+		
+		--v_key38 chrg_intr.field38%TYPE;
+		s_key38 NUMBER;
+		l_key38 NUMBER;
+	     
+	    TYPE rt IS record(
+	    k2       chrg_intr.field2%TYPE,
+	    k32		 chrg_intr.field32%TYPE,
+	    k33 	 chrg_intr.field33%TYPE,
+	    k38		 chrg_intr.field38%TYPE,
+	    rec_line chrg_intr.file_line%TYPE
+	    ); 
+ 	    
+	    TYPE arr_keys IS TABLE OF rt INDEX BY pls_integer;
+	    arr arr_keys;
+	  
+ 	    l_cnt simple_integer:=0;
+ 	   
+	BEGIN 
+		l_file := UTL_FILE.fopen(dir_name,file_name,'r');
+		
+		
+		IF flag=0 THEN 
+		s_key2:=43;
+		l_key2:=20;
+		s_key32:=1;
+		l_key32:=12;
+		s_key33:=13;
+		l_key33:=12;
+		s_key38:=175;
+		l_key38:=7;
+		
+		ELSIF flag=1 THEN 
+		s_key2:=39;
+		l_key2:=19;
+		s_key32:=1;
+		l_key32:=11;
+		s_key33:=12;
+		l_key33:=11;
+		s_key38:=73;
+		l_key38:=6;
+		
+		END IF;
+		
+        BEGIN
+            LOOP
+		
+            
+		
+            UTL_FILE.get_line(l_file,l_text); --reads the line and put it in l_text variable
+            
+            l_cnt := l_cnt+1;
+           
+            -- substring the key values from txt files
+            arr(l_cnt).k2:=nvl(trim(' ' FROM substr(l_text,s_key2,l_key2)),0);
+            arr(l_cnt).k32:=nvl(trim(' ' FROM substr(l_text,s_key32,l_key32)),0);
+            arr(l_cnt).k33:=nvl(trim(' ' FROM substr(l_text,s_key33,l_key33)),0);
+            arr(l_cnt).k38:=nvl(trim(' ' FROM substr(l_text,s_key38,l_key38)),0);
+            arr(l_cnt).rec_line:=l_text;
+            
+            
+            
+           --dbms_output.put_line(arr(l_cnt).k2||'  '||arr(l_cnt).k32||'  '||arr(l_cnt).k33||'  '||arr(l_cnt).k38 );
+                   
+               
+            END LOOP;
+            
+        EXCEPTION
+            WHEN no_data_found THEN  
+			DISPUTE.log_pack.WRITE_INFO('end of file','TEST_DSPT_NTRCHG','read_file','append');
+			UTL_FILE.fclose(l_file);
+        END;
+        
+        forall idx IN indices OF arr
+        INSERT INTO chrg_intr (id,link_file,file_name,field2,field32,field33,field38,file_line,destination_path) 
+			   VALUES (sq1.nextval,link_f,file_name,arr(idx).k2,arr(idx).k32,arr(idx).k33,arr(idx).k38,arr(idx).rec_line,test_dspt_ntrchg.full_dest);
+     
+		
+		
+		
+	
+	EXCEPTION
+	
+		WHEN UTL_FILE.invalid_operation THEN  DISPUTE.log_pack.WRITE_EXCEPTIONS('cannot open file invalid name','TEST_DSPT_NTRCHG','read_file','append');
+		WHEN UTL_FILE.read_error THEN  DISPUTE.log_pack.WRITE_EXCEPTIONS('cannot be read','TEST_DSPT_NTRCHG','read_file','append');
+		when UTL_FILE.invalid_path then DISPUTE.log_pack.WRITE_EXCEPTIONS('invalid directory path','TEST_DSPT_NTRCHG','read_file','append');
+		WHEN OTHERS THEN  DISPUTE.log_pack.WRITE_EXCEPTIONS(SQLERRM||'   '||SQLCODE,'TEST_DSPT_NTRCHG','read_file','append');
+		UTL_FILE.fclose(l_file);
+		
+		
+	END;
+	
+	
+	
+	
+	
+	
+	PROCEDURE write_match(dest_dir_name VARCHAR2,intrch_name VARCHAR2) -- writing matched and unmatched rows based on key values >> into 2 txt files
+	IS
+	    
+	    arr_1 match_arr;
+	    arr_2 match_arr;
+	    
+		CURSOR c_match  IS 	SELECT l.file_line 
+						  	FROM chrg_intr f ,chrg_intr l 
+							WHERE f.LINK_FILE=l.FILE_NAME
+							AND f.field2=l.field2 
+							AND f.FIELD32=l.FIELD32
+							AND f.FIELD33=l.FIELD33
+							AND f.FIELD38=l.FIELD38  --self join 
+							AND l.file_name=intrch_name
+							ORDER BY l.ID; 
+							
+	
+		CURSOR c_not_match  IS  SELECT file_line 
+								FROM chrg_intr 
+								where id NOT IN ( SELECT l.id 
+									FROM chrg_intr f ,chrg_intr l 
+									WHERE f.LINK_FILE=l.FILE_NAME 
+									AND f.field2=l.field2 
+									AND f.FIELD32=l.FIELD32 
+									AND f.FIELD33=l.FIELD33 
+									AND f.FIELD38=l.FIELD38   
+									AND l.file_name=intrch_name)
+								
+								AND id NOT IN(SELECT f.id 
+									FROM chrg_intr f ,chrg_intr l 
+									WHERE f.LINK_FILE=l.FILE_NAME 
+									AND f.field2=l.field2 
+									AND f.FIELD32=l.FIELD32
+									AND f.FIELD33=l.FIELD33 
+									AND f.FIELD38=l.FIELD38   
+									AND l.file_name=intrch_name)
+								AND file_name=intrch_name
+								ORDER BY ID; 
+	
+	BEGIN
+		
+	--arr_1:=match_arr();
+	--arr_2:=match_arr();
+		--FOR r in c_match
+		--LOOP 
+		--arr_1.extend;
+		open c_match;
+		fetch c_match bulk collect into arr_1 limit 5000;
+		--arr_1(c_match%rowcount):=r.FILE_LINE;
+		close c_match;
+		--END LOOP;
+   writefile(arr_1,intrch_name||'_matched.txt',dest_dir_name);
+		
+		--FOR v in c_not_match
+		--LOOP 
+		--arr_2.extend;
+		open c_not_match;
+		fetch c_not_match bulk collect into arr_2 limit 5000;
+		--arr_2(c_not_match%rowcount):=v.FILE_LINE;
+		close c_not_match;
+		--END LOOP;
+   writefile(arr_2,intrch_name||'_unmatched.txt',dest_dir_name);
+	END;
+	
+	
+	
+	
+	
+	
+	
+	
+	PROCEDURE count_rows(disp VARCHAR2 , intrch VARCHAR2,dest_dir_name VARCHAR2) -- this procedure for generating information about the number of matched and unmatched transaction
+	IS 
+	    arr_c match_arr;
+		count_match NUMBER;
+		count_unmatch NUMBER;
+		count_disp NUMBER;
+		count_inter NUMBER;
+		count_all NUMBER;
+	BEGIN 
+		SELECT count(*) 
+		INTO count_match  
+		FROM chrg_intr f ,chrg_intr l 
+		WHERE f.LINK_FILE=l.FILE_NAME 
+		AND f.field2=l.field2 
+		AND f.FIELD32=l.FIELD32 
+		AND f.FIELD33=l.FIELD33 
+		AND f.FIELD38=l.FIELD38 
+		AND l.file_name=intrch; 
+	
+		SELECT count(*) 
+		INTO count_unmatch 
+		FROM chrg_intr 
+		where id NOT IN ( SELECT l.id 
+			FROM chrg_intr f ,chrg_intr l 
+			WHERE f.LINK_FILE=l.FILE_NAME 
+			AND f.field2=l.field2 
+			AND f.FIELD32=l.FIELD32 
+			AND f.FIELD33=l.FIELD33 
+			AND f.FIELD38=l.FIELD38   
+			AND l.file_name=intrch)
+		AND id NOT IN(SELECT f.id 
+			FROM chrg_intr f ,chrg_intr l 
+			WHERE f.LINK_FILE=l.FILE_NAME 
+			AND f.field2=l.field2 
+			AND f.FIELD32=l.FIELD32
+			AND f.FIELD33=l.FIELD33 
+			AND f.FIELD38=l.FIELD38   
+			AND l.file_name=intrch)
+		AND file_name=intrch;
+	                  
+	                                                             
+		SELECT count(*) 
+		INTO count_disp 
+		FROM chrg_intr 
+		WHERE FILE_NAME LIKE(disp);
+		
+		SELECT count(*) 
+		INTO count_inter 
+		FROM chrg_intr 
+		WHERE FILE_NAME LIKE(intrch);
+		arr_c :=match_arr(to_char(sysdate,'dd/mm/yyyy hh:mi:ss pm')||chr(10)||'INTERCHANGE FILE NAME:  '||intrch||'   DISPUTE FILE NAME:    '||disp||chr(10)||'total dispute  = '||count_disp||chr(10)||'number of matched  = '||count_match||chr(10)||'number of unmatched in interchange file = '||count_unmatch||chr(10)||'total interchange  = '||count_inter||chr(10)||'*********************************************************************************************************************');	   
+		writefile(arr_c,'match_log_disput_interchange_file.txt',dest_dir_name);
+	
+	END;
+	
+	
+	
+	
+	
+	
+	
+	PROCEDURE writefile(all_text match_arr,filename VARCHAR2,dest_dir_name VARCHAR2)  --the writing procedure that is responsable for writing to text files
+	iS 
+		v_fexists BOOLEAN; --if file exists
+		v_file_length NUMBER; --file length
+		v_block_size BINARY_INTEGER;
+		l_file UTL_FILE.file_type;
+	
+	BEGIN
+	    IF filename = 'match_log_disput_interchange_file.txt'
+	    THEN 
+            l_file := UTL_FILE.fopen(dest_dir_name,filename,'A');
+	    ELSE 
+            l_file := UTL_FILE.fopen(dest_dir_name,filename,'W');
+		END IF;
+		
+		FOR i IN all_text.FIRST..all_text.LAST
+		LOOP 
+            UTL_FILE.PUT_LINE(l_file,all_text(i));
+		END LOOP;
+            UTL_FILE.fclose(l_file);
+					
+		/*
+		UTL_FILE.FGETATTR(dest_dir_name,filename,v_fexists, v_file_length, v_block_size); --getting values about existing of interchange file
+	
+		IF v_fexists=TRUE 
+		THEN 
+		l_file := UTL_FILE.fopen(dest_dir_name,filename,'W');
+		UTL_FILE.PUT_LINE(l_file,l_text);
+		UTL_FILE.fclose(l_file);
+		ELSE
+		l_file := UTL_FILE.fopen(dest_dir_name,filename,'W');
+		UTL_FILE.PUT_LINE(l_file,l_text);
+		UTL_FILE.fclose(l_file);
+		END IF;
+		*/
+	EXCEPTION
+	
+		WHEN UTL_FILE.invalid_operation THEN  DISPUTE.log_pack.WRITE_EXCEPTIONS('cannot open file invalid name','TEST_DSPT_NTRCHG','writefile','append');
+	    WHEN UTL_FILE.write_error THEN DISPUTE.log_pack.WRITE_EXCEPTIONS('Operating system error occurred during the write operation','TEST_DSPT_NTRCHG','writefile','append');
+	    when UTL_FILE.invalid_path then DISPUTE.log_pack.WRITE_EXCEPTIONS('invalid directory path','TEST_DSPT_NTRCHG','writefile','append');
+	    WHEN OTHERS THEN  DISPUTE.log_pack.WRITE_EXCEPTIONS(SQLERRM||'   '||SQLCODE,'TEST_DSPT_NTRCHG','writefile','append');
+		UTL_FILE.fclose(l_file);
+	END;
+	
+
+
+
+END;
+/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
